@@ -1,0 +1,117 @@
+import hashlib
+import os
+import json
+from tqdm import tqdm  # For progress bar
+import logging
+
+# Configure logging
+logging.basicConfig(filename="file_integrity.log", 
+                    level=logging.INFO, 
+                    format="%(asctime)s - %(levelname)s - %(message)s")
+
+def calculate_hash(file_path, hash_algorithm="sha256"):
+    """
+    Calculate the hash of a file.
+    
+    :param file_path: Path to the file.
+    :param hash_algorithm: Hashing algorithm to use.
+    :return: Hexadecimal hash value or None if the file doesn't exist.
+    """
+    hash_func = hashlib.new(hash_algorithm)
+    try:
+        with open(file_path, "rb") as f:
+            while chunk := f.read(8192):
+                hash_func.update(chunk)
+        return hash_func.hexdigest()
+    except FileNotFoundError:
+        logging.warning(f"File not found: {file_path}")
+        return None
+
+def generate_file_hashes(directory, output_file="file_hashes.json", hash_algorithm="sha256"):
+    """
+    Generate hash values for all files in a directory and save them to a file.
+    
+    :param directory: Directory to scan.
+    :param output_file: File to store the hash values.
+    :param hash_algorithm: Hashing algorithm to use.
+    """
+    if not os.path.isdir(directory):
+        print(f"Directory does not exist: {directory}")
+        logging.error(f"Invalid directory: {directory}")
+        return
+    
+    file_hashes = {}
+    files = [os.path.join(root, file) 
+             for root, _, files in os.walk(directory) for file in files]
+    
+    print("Generating file hashes...")
+    for file_path in tqdm(files, desc="Hashing Files"):
+        file_hashes[file_path] = calculate_hash(file_path, hash_algorithm)
+    
+    with open(output_file, "w") as f:
+        json.dump(file_hashes, f, indent=4)
+    print(f"Hash values stored in {output_file}.")
+    logging.info(f"Hash values generated and stored in {output_file}.")
+
+def check_file_integrity(reference_file="file_hashes.json", hash_algorithm="sha256"):
+    """
+    Compare current hash values with stored hash values.
+    
+    :param reference_file: File containing the stored hash values.
+    :param hash_algorithm: Hashing algorithm to use.
+    """
+    try:
+        with open(reference_file, "r") as f:
+            stored_hashes = json.load(f)
+    except FileNotFoundError:
+        print(f"Reference file not found: {reference_file}")
+        logging.error(f"Reference file not found: {reference_file}")
+        return
+    
+    unchanged = []
+    changed = []
+    missing = []
+    
+    print("Checking file integrity...")
+    for file_path, stored_hash in tqdm(stored_hashes.items(), desc="Checking Files"):
+        current_hash = calculate_hash(file_path, hash_algorithm)
+        if current_hash is None:
+            missing.append(file_path)
+        elif current_hash != stored_hash:
+            changed.append(file_path)
+        else:
+            unchanged.append(file_path)
+    
+    # Print and log results
+    print("\nIntegrity Check Results:")
+    print(f"Unchanged files: {len(unchanged)}")
+    print(f"Changed files: {len(changed)}")
+    print(f"Missing files: {len(missing)}")
+    
+    logging.info("Integrity Check Summary:")
+    logging.info(f"Unchanged files: {len(unchanged)}")
+    logging.info(f"Changed files: {len(changed)}")
+    logging.info(f"Missing files: {len(missing)}")
+    
+    if changed:
+        logging.warning(f"Changed files: {changed}")
+    if missing:
+        logging.warning(f"Missing files: {missing}")
+
+if __name__ == "__main__":
+    print("File Integrity Checker")
+    print("1. Generate file hashes")
+    print("2. Check file integrity")
+    choice = input("Choose an option (1/2): ")
+    
+    if choice == "1":
+        directory = input("Enter the directory to monitor: ")
+        hash_algorithm = input("Enter the hash algorithm (default: sha256): ") or "sha256"
+        output_file = input("Enter the file to store hashes (default: file_hashes.json): ") or "file_hashes.json"
+        generate_file_hashes(directory, output_file, hash_algorithm)
+    elif choice == "2":
+        reference_file = input("Enter the file containing stored hashes (default: file_hashes.json): ") or "file_hashes.json"
+        hash_algorithm = input("Enter the hash algorithm (default: sha256): ") or "sha256"
+        check_file_integrity(reference_file, hash_algorithm)
+    else:
+        print("Invalid choice.")
